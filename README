@@ -1,0 +1,13 @@
+
+txt2html
+========
+
+txt2html is a tool for converting text files to HTML.
+
+The goal is to be simple and not to create set of syntax rules for another markup language but take conventions commonly found in .txt files and convert them to HTML.
+
+You could probably use a cmark (https://github.com/commonmark/cmark) or another markdown parser to achieve the same goal but this was written as an educational project in writing an AST in C.
+
+authors
+-------
+- gearsix
