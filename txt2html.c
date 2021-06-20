@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <ctype.h> // replace with utf8 support
 
+#define ASTLIMIT 10000
+
 // config
 #define OPT_HB 0x01
 
@@ -19,9 +21,9 @@ struct node {
 	char *buf;
 };
 
-void writeP(struct node *n, int c);
+void writebuf(struct node *n, int c);
 struct node *txt2html(const char *txt);
-struct node *next(struct node *prev, uint8_t tag, struct node *n);
+struct node *newnode(struct node *prev, uint8_t tag, struct node *n);
 
 const uint8_t opts = OPT_HB;
 
@@ -43,8 +45,7 @@ int main(int argc, char **argv)
 
 struct node *txt2html(const char *txt)
 {
-	struct node *n = malloc(50 * sizeof(struct node));
-
+	struct node *n = malloc(ASTLIMIT * sizeof(struct node));
 	int c;
 	unsigned int i = 0;
 	const size_t len = strlen(txt);
@@ -55,25 +56,25 @@ struct node *txt2html(const char *txt)
 		switch (n->type) {
 			case P:
 				if (c == EOF)
-					n = next(n, CLOSE+P, n+1);
+					n = newnode(n, CLOSE+P, n+1);
 				else if (c == '\n' && txt[i+1] == '\n') {
 					++i;
-					n = next(n, CLOSE+P, n+1);
+					n = newnode(n, CLOSE+P, n+1);
 				} else if (c == '\n') {
 					if (opts & OPT_HB) {
-						n = next(n, OPEN+BR+CLOSE, n+1);
-						n = next(n, P, n+1);
-					} else writeP(n, ' ');
-				} else writeP(n, c);
+						n = newnode(n, OPEN+BR+CLOSE, n+1);
+						n = newnode(n, P, n+1);
+					} else writebuf(n, ' ');
+				} else writebuf(n, c);
 				break;
 			case 0:
 			default:
 				if (isprint(c) || c == '\t') {
 					if (n->prev == NULL || n->type == CLOSE+P) {
-						n = next(n, OPEN+P, n+1);
-						n = next(n, P, n+1);
+						n = newnode(n, OPEN+P, n+1);
+						n = newnode(n, P, n+1);
 					}
-					writeP(n, c);
+					writebuf(n, c);
 				}
 				break;
 		}
@@ -86,9 +87,14 @@ struct node *txt2html(const char *txt)
 	return n;
 }
 
-struct node *next(struct node *prev, uint8_t tag, struct node *n)
+// malloc node `n` and set it's values according to `tag`.
+// a pointer to `n` is returned.
+struct node *newnode(struct node *prev, uint8_t tag, struct node *n)
 {
-	prev->next = n;
+	if (n == NULL)
+		perror("newnode, n cannot be NULL");
+	if (prev != NULL)
+		prev->next = n;
 	n->prev = prev;
 	n->type = tag;
 	switch(tag) {
@@ -97,14 +103,14 @@ struct node *next(struct node *prev, uint8_t tag, struct node *n)
 			strncat(n->buf, "<p>", 4);
 			break;
 		case CLOSE+P:
-			if (prev->type == P)
-				writeP(prev, EOF);
+			if (prev != NULL && prev->type == P)
+				writebuf(prev, EOF);
 			n->buf = malloc(5);
 			strncat(n->buf, "</p>", 5);
 			break;
 		case OPEN+BR+CLOSE:
-			if (prev->type == P)
-				writeP(prev, EOF);
+			if (prev != NULL && prev->type == P)
+				writebuf(prev, EOF);
 			n->buf = malloc(6);
 			strncat(n->buf, "<br/>", 6);
 			break;
@@ -114,7 +120,10 @@ struct node *next(struct node *prev, uint8_t tag, struct node *n)
 	return n;
 }
 
-void writeP(struct node *n, int c)
+// writebuf has an internal static buffer (`buf`) that it writes `c` to.
+// if `c=EOF` or `buf` reaches `BUFSIZ`, then `buf` it's written to n->buf.
+// `n->buf` will only be allocated used memory.
+void writebuf(struct node *n, int c)
 {
 	static int pag = 0;
 	static int len = 0;
