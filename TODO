@@ -1,10 +1,10 @@
-- rename writeP
-- implement ol
-- implement ul
-- implement li
-- implement h1
-- implement h2
-- test ast against just writing straight to buffer
-- avoid recursion (unless needed) - slow
-- test against test.txt, improve test.txt for catching edge-cases
-- maybe rename to NAML (not another markup language)
+[x] rename writeP
+[-] implement ol
+[-] implement ul
+[-] implement li
+[-] implement h1
+[-] implement h2
+[-] test ast against just writing straight to buffer
+[-] avoid recursion (unless needed) [-] slow
+[-] test against test.txt, improve test.txt for catching edge[-]cases
+[-] maybe rename to NAML (not another markup language)
