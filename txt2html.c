@@ -10,10 +10,17 @@
 #define OPT_HB 0x01
 
 // node tags
+#define MAXNODE   0x41
 #define OPEN      0x10
 #define CLOSE     0x20
-#define P         0x01
-#define BR        0x02
+#define H1        0x01
+#define H2        0x02
+#define P         0x03
+#define PRE       0x04
+#define LI        0x05
+#define BR        0x06
+#define OL        0x04
+#define UL        0x08
 
 struct node {
 	struct node *prev, *next;
@@ -24,12 +31,13 @@ struct node {
 void writebuf(struct node *n, int c);
 struct node *txt2html(const char *txt);
 struct node *newnode(struct node *prev, uint8_t tag, struct node *n);
+struct node *closenode(struct node *n);
 
 const uint8_t opts = OPT_HB;
 
 int main(int argc, char **argv)
 {
-	const char *text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\naaaaaaa\n\naaaaaa";
+	const char *text = "aaaaaaaaa\n====\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\naaaaaaa\n\naaaaaa\n---";
 	char *html = malloc(4062);
 
 	struct node *n = txt2html(text);
@@ -47,17 +55,24 @@ struct node *txt2html(const char *txt)
 {
 	struct node *n = malloc(ASTLIMIT * sizeof(struct node));
 	int c;
-	unsigned int i = 0;
+	unsigned int i = 0, j;
 	const size_t len = strlen(txt);
 
 	while (c != EOF) {
-		c = (i < len) ? txt[i] : EOF;
+		c = (i++ < len) ? txt[i] : EOF;
+
+		if (c == EOF) {
+			n = closenode(n);
+			continue;
+		}
 
 		switch (n->type) {
+			case UL+OPEN+LI:
+			case OL+OPEN+LI:
+				break;
+			case OPEN+P:
 			case P:
-				if (c == EOF)
-					n = newnode(n, CLOSE+P, n+1);
-				else if (c == '\n' && txt[i+1] == '\n') {
+				if (c == '\n' && txt[i+1] == '\n') {
 					++i;
 					n = newnode(n, CLOSE+P, n+1);
 				} else if (c == '\n') {
@@ -67,23 +82,72 @@ struct node *txt2html(const char *txt)
 					} else writebuf(n, ' ');
 				} else writebuf(n, c);
 				break;
-			case 0:
 			default:
-				if (isprint(c) || c == '\t') {
-					if (n->prev == NULL || n->type == CLOSE+P) {
+				if (isalnum(c) && txt[i+1] == '.' && txt[i+2] == ' ') {
+					n = newnode(n, OPEN+OL, n+1);
+					n = newnode(n, OL+OPEN+LI, n+1);
+					i += 2;
+				} else if ((c == '*' || c == '-') && txt[i+1] == ' ') {
+					n = newnode(n, OPEN+UL, n+1);
+					n = newnode(n, UL+OPEN+LI, n+1);
+					i++;
+				} else if (c == '\t') {
+					if (isprint(txt[i+1])) {
+						n = newnode(n, OPEN+PRE, n+1);
+						n = newnode(n, PRE, n+1);
+						++i;
+					}
+				} else if (isprint(c)) {
+					j = i;
+					while (txt[++j] != '\n' && j < len); ++j; // skip to next
+					if (txt[j] == '=' && txt[j+1] == '=' && txt[j+2] == '=') {
+						n = newnode(n, OPEN+H1, n+1);
+						n = newnode(n, H1, n+1);
+					} else if (txt[j] == '-' && txt[j+1] == '-' && txt[j+2] == '-') {
+						n = newnode(n, OPEN+H2, n+1);
+						n = newnode(n, H2, n+1);
+					}
+					if (n->type == H1 || n->type == H2) {
+						while (i < j-1)
+							writebuf(n, txt[i++]);
+						while (txt[++i] != '\n'); // skip "==="/"---" line
+						n = newnode(n, CLOSE+n->type, n+1);
+					} else {
 						n = newnode(n, OPEN+P, n+1);
 						n = newnode(n, P, n+1);
+						writebuf(n, c);
 					}
-					writebuf(n, c);
 				}
 				break;
 		}
-
-		++i;
 	}
 
 	while (n->prev != NULL)
 		n = n->prev;
+	return n;
+}
+
+struct node *closenode(struct node *n)
+{
+	switch (n->type) {
+		case UL+OPEN+LI:
+			n = newnode(n, CLOSE+UL+LI, n+1);
+			n = newnode(n, CLOSE+UL, n+1);
+			break;
+		case UL:
+			n = newnode(n, CLOSE+UL, n+1);
+			break;
+		case OL+OPEN+LI:
+			n = newnode(n, CLOSE+OL+LI, n+1);
+			n = newnode(n, CLOSE+OL, n+1);
+			break;
+		case OL:
+			n = newnode(n, CLOSE+OL, n+1);
+			break;
+		case P:
+		case OPEN+P:
+			n = newnode(n, CLOSE+P, n+1);
+	}
 	return n;
 }
 
@@ -98,21 +162,41 @@ struct node *newnode(struct node *prev, uint8_t tag, struct node *n)
 	n->prev = prev;
 	n->type = tag;
 	switch(tag) {
+		case OPEN+H1:
+			n->buf = malloc(5);
+			strncat(n->buf, "<h1>", 5);
+			break;
+		case OPEN+H2:
+			n->buf = malloc(5);
+			strncat(n->buf, "<h2>", 5);
+			break;
 		case OPEN+P:
 			n->buf = malloc(4);
 			strncat(n->buf, "<p>", 4);
 			break;
+		case CLOSE+H1:
+			if (prev != NULL && prev->type == H1)
+				writebuf(prev, EOF);
+			n->buf = malloc(7);
+			strncat(n->buf, "</h1>\n", 7);
+			break;
+		case CLOSE+H2:
+			if (prev != NULL && prev->type == H2)
+				writebuf(prev, EOF);
+			n->buf = malloc(7);
+			strncat(n->buf, "</h2>\n", 7);
+			break;
 		case CLOSE+P:
 			if (prev != NULL && prev->type == P)
 				writebuf(prev, EOF);
-			n->buf = malloc(5);
-			strncat(n->buf, "</p>", 5);
+			n->buf = malloc(6);
+			strncat(n->buf, "</p>\n", 6);
 			break;
 		case OPEN+BR+CLOSE:
 			if (prev != NULL && prev->type == P)
 				writebuf(prev, EOF);
-			n->buf = malloc(6);
-			strncat(n->buf, "<br/>", 6);
+			n->buf = malloc(7);
+			strncat(n->buf, "<br/>\n", 7);
 			break;
 		default:
 			break;
@@ -140,14 +224,14 @@ void writebuf(struct node *n, int c)
 	switch (c) {
 		case EOF:
 			pag = 0;
-			return;
+			break;
 		case '\t':
 			strncat(buf, "&emsp;", 7);
 			len += 6;
-			return;
+			break;
 		default:
 			strncat(buf, (char *)&c, 2);
 			len += 1;
-			return;
+			break;
 	}
 }

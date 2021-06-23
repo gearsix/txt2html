@@ -1,10 +1,11 @@
 [x] rename writeP
 [ ] remove ASTLIMIT
-[ ] implement ol
-[ ] implement ul
-[ ] implement li
-[ ] implement h1
-[ ] implement h2
+[~] implement ol
+[~] implement ul
+[~] implement li
+[~] implement h1
+[~] implement h2
+[ ] write tests
 [ ] test ast against just writing straight to buffer
 [ ] avoid recursion (unless needed)
 [ ] test against test.txt, improve test.txt for catching edge-cases
