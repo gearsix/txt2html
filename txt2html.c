@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 	struct node *n = txt2html(text);
 	while(n != NULL) {
 		if (n->buf != NULL)
-			printf(n->buf);
+			printf("%02x='%s'\n", n->type, n->buf);
 		n = n->next;
 	}
 	puts("");
@@ -162,41 +162,28 @@ struct node *newnode(struct node *prev, uint8_t tag, struct node *n)
 	n->prev = prev;
 	n->type = tag;
 	switch(tag) {
-		case OPEN+H1:
-			n->buf = malloc(5);
-			strncat(n->buf, "<h1>", 5);
-			break;
-		case OPEN+H2:
-			n->buf = malloc(5);
-			strncat(n->buf, "<h2>", 5);
-			break;
-		case OPEN+P:
-			n->buf = malloc(4);
-			strncat(n->buf, "<p>", 4);
-			break;
+		case OPEN+H1: n->buf = "<h1>\0"; break;
+		case OPEN+H2: n->buf = "<h2>\0"; break;
+		case OPEN+P:  n->buf = "<p>\0"; break;
 		case CLOSE+H1:
 			if (prev != NULL && prev->type == H1)
 				writebuf(prev, EOF);
-			n->buf = malloc(7);
-			strncat(n->buf, "</h1>\n", 7);
+			n->buf = "</h1>\n\0";
 			break;
 		case CLOSE+H2:
 			if (prev != NULL && prev->type == H2)
 				writebuf(prev, EOF);
-			n->buf = malloc(7);
-			strncat(n->buf, "</h2>\n", 7);
+			n->buf = "</h2>\n\0";
 			break;
 		case CLOSE+P:
 			if (prev != NULL && prev->type == P)
 				writebuf(prev, EOF);
-			n->buf = malloc(6);
-			strncat(n->buf, "</p>\n", 6);
+			n->buf = "</p>\n\0";
 			break;
 		case OPEN+BR+CLOSE:
 			if (prev != NULL && prev->type == P)
 				writebuf(prev, EOF);
-			n->buf = malloc(7);
-			strncat(n->buf, "<br/>\n", 7);
+			n->buf = "<br/>\n\0";
 			break;
 		default:
 			break;
@@ -214,6 +201,7 @@ void writebuf(struct node *n, int c)
 	static char buf[BUFSIZ];
 
 	if (len+1 == BUFSIZ || c == EOF) {
+		buf[len++] = '\0';
 		n->buf = (pag == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
 		memmove(n->buf, buf, len);
 		++pag;
