@@ -86,7 +86,6 @@ struct node *txt2html(char *txt)
 					writebuf(n, txt[i]);
 				}
 				++i;
-//				i = readp(n, txt, i);
 				break;
 			default:
 				if (isalnum(txt[i]) && txt[i+1] == '.' && txt[i+2] == ' ') {
@@ -243,39 +242,5 @@ int isheading(char *txt, int i)
 		return H2;
 	else
 		return 0;
-}
-
-//
-int readp(struct node *n, char *txt, int i)
-{
-	if (n == NULL || txt == NULL)
-		return 0;
-
-	const int len = strlen(txt);
-	if (i > len) {
-		n = closenode(n);
-		return EOF;
-	}
-
-	if (txt[i] == '\n') {
-		if (i+1 <= len && txt[i+1] == '\n') {
-			n = closenode(n);
-			++i;
-		} else if (opts & OPT_HB) {
-			n = newnode(n, OPEN+BR+CLOSE, n+1);
-			n = newnode(n, P, n+1);
-		} else {
-			writebuf(n, ' ');
-		}
-		++i;
-	} else while (i < len && txt[i] != '\n')
-		writebuf(n, txt[i++]);
-
-	if (i == len) {
-		n = closenode(n);
-		i = EOF;
-	}
-
-	return i;
 }
 
