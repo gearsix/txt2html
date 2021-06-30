@@ -6,11 +6,10 @@
 
 #define ASTLIMIT 10000
 
-// config
-#define OPT_HB 0x01
+// options within <p>
+#define OPT_HB 0x01 // newlines as <br/> nodes
 
 // node tags
-#define MAXNODE   0x41
 #define OPEN      0x10
 #define CLOSE     0x20
 #define H1        0x01
@@ -28,8 +27,10 @@ struct node {
 	char *buf;
 };
 
+int readp(struct node *n, char *txt, int txti);
+int isheading(char *txt, int txti);
 void writebuf(struct node *n, int c);
-struct node *txt2html(const char *txt);
+struct node *txt2html(char *txt);
 struct node *newnode(struct node *prev, uint8_t tag, struct node *n);
 struct node *closenode(struct node *n);
 
@@ -37,7 +38,7 @@ const uint8_t opts = OPT_HB;
 
 int main(int argc, char **argv)
 {
-	const char *text = "aaaaaaaaa\n====\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\naaaaaaa\n\naaaaaa\n---";
+	char *text = "aaaaaaaaa\n====\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\naaaaaaa\n\naaaaaa\n---";
 	char *html = malloc(4062);
 
 	struct node *n = txt2html(text);
@@ -46,79 +47,84 @@ int main(int argc, char **argv)
 			printf(n->buf);
 		n = n->next;
 	}
-	puts("");
 
 	return EXIT_SUCCESS;
 }
 
-struct node *txt2html(const char *txt)
+struct node *txt2html(char *txt)
 {
 	struct node *n = malloc(ASTLIMIT * sizeof(struct node));
-	int c;
-	unsigned int i = 0, j;
 	const size_t len = strlen(txt);
 
-	while (c != EOF) {
-		c = (i++ < len) ? txt[i] : EOF;
-
-		if (c == EOF) {
-			n = closenode(n);
-			continue;
-		}
+	unsigned int i = 0;
+	while (i != EOF) {
+		while (txt[i] == '\n') ++i;
 
 		switch (n->type) {
 			case UL+OPEN+LI:
 			case OL+OPEN+LI:
 				break;
-			case OPEN+P:
+			case H1:
+			case H2:
+				while (txt[i] != '\n')
+					writebuf(n, txt[i++]);
+				do { ++i; } while (txt[i] == '-' || txt[i] == '=');
+				n = newnode(n, CLOSE+n->type, n+1);
+				break;
 			case P:
-				if (c == '\n' && txt[i+1] == '\n') {
+				while (i <= len && isprint(txt[i]))
+					writebuf(n, txt[i++]);
+				if (txt[i] == '\n' && txt[i+1] == '\n') {
 					++i;
-					n = newnode(n, CLOSE+P, n+1);
-				} else if (c == '\n') {
-					if (opts & OPT_HB) {
-						n = newnode(n, OPEN+BR+CLOSE, n+1);
-						n = newnode(n, P, n+1);
-					} else writebuf(n, ' ');
-				} else writebuf(n, c);
+					n = closenode(n);
+				} else if (txt[i] == '\n' && (opts & OPT_HB)) {
+					n = newnode(n, OPEN+BR+CLOSE, n+1);
+					n = newnode(n, P, n+1);
+				} else if (txt[i] == '\n') {
+					writebuf(n, ' ');
+				} else {
+					writebuf(n, txt[i]);
+				}
+				++i;
+//				i = readp(n, txt, i);
 				break;
 			default:
-				if (isalnum(c) && txt[i+1] == '.' && txt[i+2] == ' ') {
+				if (isalnum(txt[i]) && txt[i+1] == '.' && txt[i+2] == ' ') {
 					n = newnode(n, OPEN+OL, n+1);
 					n = newnode(n, OL+OPEN+LI, n+1);
 					i += 2;
-				} else if ((c == '*' || c == '-') && txt[i+1] == ' ') {
+				} else if ((txt[i] == '*' || txt[i] == '-') && txt[i+1] == ' ') {
 					n = newnode(n, OPEN+UL, n+1);
 					n = newnode(n, UL+OPEN+LI, n+1);
 					i++;
-				} else if (c == '\t') {
-					if (isprint(txt[i+1])) {
-						n = newnode(n, OPEN+PRE, n+1);
-						n = newnode(n, PRE, n+1);
-						++i;
+				} else if (txt[i] == '\t' && isprint(txt[i+1])) {
+					n = newnode(n, OPEN+PRE, n+1);
+					n = newnode(n, PRE, n+1);
+					++i;
+				} else if (isprint(txt[i])) {
+					switch (isheading(txt, i)) {
+						case H1:
+							n = newnode(n, OPEN+H1, n+1);
+							n = newnode(n, H1, n+1);
+							break;
+						case H2:
+							n = newnode(n, OPEN+H2, n+1);
+							n = newnode(n, H2, n+1);
+							break;
+						default:
+							n = newnode(n, OPEN+P, n+1);
+							n = newnode(n, P, n+1);
+							break;
 					}
-				} else if (isprint(c)) {
-					j = i;
-					while (txt[++j] != '\n' && j < len); ++j; // skip to next
-					if (txt[j] == '=' && txt[j+1] == '=' && txt[j+2] == '=') {
-						n = newnode(n, OPEN+H1, n+1);
-						n = newnode(n, H1, n+1);
-					} else if (txt[j] == '-' && txt[j+1] == '-' && txt[j+2] == '-') {
-						n = newnode(n, OPEN+H2, n+1);
-						n = newnode(n, H2, n+1);
-					}
-					if (n->type == H1 || n->type == H2) {
-						while (i < j-1)
-							writebuf(n, txt[i++]);
-						while (txt[++i] != '\n'); // skip "==="/"---" line
-						n = newnode(n, CLOSE+n->type, n+1);
-					} else {
-						n = newnode(n, OPEN+P, n+1);
-						n = newnode(n, P, n+1);
-						writebuf(n, c);
-					}
+					writebuf(n, txt[i++]);
 				}
 				break;
+		}
+
+		if (i >= len) {
+			i = EOF;
+			n = closenode(n);
+			continue;
 		}
 	}
 
@@ -147,6 +153,9 @@ struct node *closenode(struct node *n)
 		case P:
 		case OPEN+P:
 			n = newnode(n, CLOSE+P, n+1);
+			break;
+		default:
+			break;
 	}
 	return n;
 }
@@ -235,3 +244,50 @@ void writebuf(struct node *n, int c)
 			break;
 	}
 }
+
+int isheading(char *txt, int i)
+{
+	const int len = strlen(txt);
+	while (txt[i++] != '\n' && i < len); // skip to next line
+	if (txt[i] == '=' && txt[i+1] == '=' && txt[i+2] == '=')
+		return H1;
+	if (txt[i] == '-' && txt[i+1] == '-' && txt[i+2] == '-')
+		return H2;
+	else
+		return 0;
+}
+
+//
+int readp(struct node *n, char *txt, int i)
+{
+	if (n == NULL || txt == NULL)
+		return 0;
+
+	const int len = strlen(txt);
+	if (i > len) {
+		n = closenode(n);
+		return EOF;
+	}
+
+	if (txt[i] == '\n') {
+		if (i+1 <= len && txt[i+1] == '\n') {
+			n = closenode(n);
+			++i;
+		} else if (opts & OPT_HB) {
+			n = newnode(n, OPEN+BR+CLOSE, n+1);
+			n = newnode(n, P, n+1);
+		} else {
+			writebuf(n, ' ');
+		}
+		++i;
+	} else while (i < len && txt[i] != '\n')
+		writebuf(n, txt[i++]);
+
+	if (i == len) {
+		n = closenode(n);
+		i = EOF;
+	}
+
+	return i;
+}
+
