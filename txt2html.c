@@ -240,7 +240,6 @@ struct node *closenode(struct node *n)
 		case OL+OPEN+LI:
 		case OL+LI:
 			n = newnode(n, n+1, CLOSE+OL+LI);
-			n = newnode(n, n+1, CLOSE+OL);
 			break;
 		case OPEN+OL:
 		case CLOSE+OL+LI:
