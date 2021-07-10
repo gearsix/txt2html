@@ -76,8 +76,8 @@ int main(int argc, char **argv)
 			fread(buf, BUFSIZ-1, sizeof(char), f);
 			n = txt2html(buf, n);
 			c = fgetc(f);
-			if (c != EOF)
-				if (ungetc(c, f) == EOF) perror("txt2html: ungetc() fail");
+			if (c != EOF && ungetc(c, f) == EOF)
+				perror("txt2html: ungetc() fail");
 		} while (c != EOF);
 		do {
 			if (n->next == NULL) break;
@@ -92,10 +92,10 @@ int main(int argc, char **argv)
 
 struct node *txt2html(char *txt, struct node *n)
 {
-	int cont = 0;
+	if (txt == NULL || txt[0] == EOF)
+		goto EXIT;
 	if (n == NULL)
 		n = malloc(ASTLIMIT * sizeof(struct node));
-	else cont = 1;
 	const size_t len = strlen(txt);
 
 	unsigned int i = 0;
@@ -138,7 +138,7 @@ struct node *txt2html(char *txt, struct node *n)
 					n = closenode(n);
 					n = newnode(n, n+1, CLOSE+OL);
 					if (txt[i+1] == '\0') goto EXIT;
-				} else if (txt[i] == '\n' && (isalnum(txt[i]) && txt[i+1] == '.' && txt[i+2] == ' ')) {
+				} else if (txt[i] == '\n' && (isalnum(txt[i+1]) && txt[i+2] == '.')) {
 					i += 2;
 					n = closenode(n);
 					n = newnode(n, n+1, OL+OPEN+LI);
@@ -177,7 +177,7 @@ struct node *txt2html(char *txt, struct node *n)
 				++i;
 				break;
 			default:
-				if (isalnum(txt[i]) && txt[i+1] == '.' && txt[i+2] == ' ') {
+				if (isalnum(txt[i]) && txt[i+1] == '.') {
 					n = newnode(n, n+1, OPEN+OL);
 					n = newnode(n, n+1, OL+OPEN+LI);
 					i += 3;
@@ -209,7 +209,7 @@ struct node *txt2html(char *txt, struct node *n)
 				break;
 		}
 
-		if (i >= len) {
+		if (i >= len || txt[i] == '\0') {
 EXIT:
 			i = EOF;
 			n = closenode(n);
@@ -217,40 +217,38 @@ EXIT:
 		}
 	}
 
-	if ((n->type & CLOSE) == 1)
-		n = NULL;
-	else
-		closenode(n);
-		while (n->prev != NULL) n = n->prev;
+	while (n != NULL && n->prev != NULL) n = n->prev;
 	
 	return n;
 }
 
 struct node *closenode(struct node *n)
 {
-	switch (n->type) {
-		case UL+OPEN+LI:
-		case UL+LI:
-			n = newnode(n, n+1, CLOSE+UL+LI);
-			break;
-		case OPEN+UL:
-		case CLOSE+UL+LI:
-			n = newnode(n, n+1, CLOSE+UL);
-			break;
-		case OL+OPEN+LI:
-		case OL+LI:
-			n = newnode(n, n+1, CLOSE+OL+LI);
-			break;
-		case OPEN+OL:
-		case CLOSE+OL+LI:
-			n = newnode(n, n+1, CLOSE+OL);
-			break;
-		case OPEN+P:
-		case P:
-			n = newnode(n, n+1, CLOSE+P);
-			break;
-		default:
-			break;
+	if (n != NULL) {
+		switch (n->type) {
+			case UL+OPEN+LI:
+			case UL+LI:
+				n = newnode(n, n+1, CLOSE+UL+LI);
+				break;
+			case OPEN+UL:
+			case CLOSE+UL+LI:
+				n = newnode(n, n+1, CLOSE+UL);
+				break;
+			case OL+OPEN+LI:
+			case OL+LI:
+				n = newnode(n, n+1, CLOSE+OL+LI);
+				break;
+			case OPEN+OL:
+			case CLOSE+OL+LI:
+				n = newnode(n, n+1, CLOSE+OL);
+				break;
+			case OPEN+P:
+			case P:
+				n = newnode(n, n+1, CLOSE+P);
+				break;
+			default:
+				break;
+		}
 	}
 	return n;
 }
@@ -283,7 +281,7 @@ struct node *newnode(struct node *prev, struct node *next, uint8_t tag)
 			break;
 		case OL+OPEN+LI:
 		case UL+OPEN+LI:
-			next->buf = "&emsp;<li>\0";
+			next->buf = "  <li>\0";
 			break;
 		case CLOSE+H1:
 			if (prev != NULL && prev->type == H1)
