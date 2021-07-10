@@ -1,0 +1,27 @@
+
+ast
+===
+
+pseudo-code to help remember the parsing rules
+for the ast, should try convert to to LARL when
+there's time.
+
+\u = unicode character (note utf-x currently just using std c ascii support)
+\t = horizintal tab
+\n = newline
+
+node{
+	"\n\n"           = '<//>'
+	"\u."            = '<ol>', '<li>' = {list}
+	"[*-] "          = '<ul>', '<li>' = {list}
+	"\t\u"           = '<pre>'
+	"\u\n==={=}\n"   = '<h1>'
+	"\u\n---{-}\n"   = '<h2>'
+	"\u[\u\n\t]\n\n" = '<p>'
+}
+
+list{
+	"\n[\n\0]" = '</li>','</ol>'
+	"\n\u."    = '</li>','<li>'
+	"\n\u[^.]" = (hardbreaks) ? '<br/>' : ' '
+}
