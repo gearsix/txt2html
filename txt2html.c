@@ -7,7 +7,8 @@
 #define ASTLIMIT 10000
 
 // options within <p>
-#define OPT_HB 0x01 // newlines as <br/> nodes
+#define OPT_V  0x10 // print verbose logs
+#define OPT_BR 0x01 // newlines as <br/> nodes
 
 // node tags
 #define OPEN      0x10
@@ -34,6 +35,8 @@ struct node *txt2html(char *txt, struct node *n);
 struct node *newnode(struct node *prev, struct node *next, uint8_t tag);
 struct node *closenode(struct node *n);
 
+uint8_t opts = 0;
+
 void help()
 {
 
@@ -41,10 +44,8 @@ void help()
 
 void verbose(const char *log)
 {
-	printf("txt2html: %s", log);
+	if (opts & OPT_V) printf("txt2html: %s", log);
 }
-
-uint8_t opts = 0;
 
 int main(int argc, char **argv)
 {
@@ -57,10 +58,12 @@ int main(int argc, char **argv)
 				strcmp(argv[a], "--help") == 0) {
 				help();
 				a = 0;
+			} else if (strcmp(argv[a], "-br") == 0) {
+				opts |= OPT_BR;
+			} else if (strcmp(argv[a], "-v") == 0) {
+				opts |= OPT_V;
 			}
-			if (strcmp(argv[a], "-br") == 0 ||
-				strcmp(argv[a], "-break") == 0)
-				opts |= OPT_HB;
+			
 			argv[a][0] = '\0';
 		}
 	}
@@ -69,7 +72,7 @@ int main(int argc, char **argv)
 	char c;
 	for (a = 1, c = EOF; a < argc; ++a) {
 		FILE *f = fopen(argv[a], "r");
-		struct node *html = NULL, *n = NULL;
+		struct node *n = NULL;
 		do {
 			verbose("reading...\r");
 			char buf[BUFSIZ] = {'\0'};
@@ -79,11 +82,10 @@ int main(int argc, char **argv)
 			if (c != EOF && ungetc(c, f) == EOF)
 				perror("txt2html: ungetc() fail");
 		} while (c != EOF);
-		do {
-			if (n->next == NULL) break;
+		while (n->next != NULL) {
 			n = n->next;
-			printf("%s", n->buf);
-		} while (n->buf != NULL);
+			if (n->buf != NULL) printf("%s", n->buf);
+		}
 		fclose(f);
 	}
 
@@ -118,7 +120,7 @@ struct node *txt2html(char *txt, struct node *n)
 					n = closenode(n);
 					n = newnode(n, n+1, UL+OPEN+LI);
 					n = newnode(n, n+1, UL+LI);
-				} else if (txt[i] == '\n' && (opts & OPT_HB)) {
+				} else if (txt[i] == '\n' && (opts & OPT_BR)) {
 					n = newnode(n, n+1, OPEN+BR+CLOSE);
 					n = newnode(n, n+1, UL+OPEN+LI);
 				} else if (txt[i] == '\n') {
@@ -143,7 +145,7 @@ struct node *txt2html(char *txt, struct node *n)
 					n = closenode(n);
 					n = newnode(n, n+1, OL+OPEN+LI);
 					n = newnode(n, n+1, OL+LI);
-				} else if (txt[i] == '\n' && (opts & OPT_HB)) {
+				} else if (txt[i] == '\n' && (opts & OPT_BR)) {
 					n = newnode(n, n+1, OPEN+BR+CLOSE);
 					n = newnode(n, n+1, OL+LI);
 				} else if (txt[i] == '\n') {
@@ -166,7 +168,7 @@ struct node *txt2html(char *txt, struct node *n)
 				if (txt[i] == '\n' && txt[i+1] == '\n') {
 					++i;
 					n = closenode(n);
-				} else if (txt[i] == '\n' && (opts & OPT_HB)) {
+				} else if (txt[i] == '\n' && (opts & OPT_BR)) {
 					n = newnode(n, n+1, OPEN+BR+CLOSE);
 					n = newnode(n, n+1, P);
 				} else if (txt[i] == '\n') {
