@@ -30,31 +30,72 @@ struct node {
 int readp(struct node *n, char *txt, int txti);
 int isheading(char *txt, int txti);
 void writebuf(struct node *n, int c);
-struct node *txt2html(char *txt);
+struct node *txt2html(char *txt, struct node *n);
 struct node *newnode(struct node *prev, struct node *next, uint8_t tag);
 struct node *closenode(struct node *n);
 
-const uint8_t opts = OPT_HB;
+void help()
+{
+
+}
+
+void verbose(const char *log)
+{
+	printf("txt2html: %s", log);
+}
+
+uint8_t opts = 0;
 
 int main(int argc, char **argv)
 {
-	char *text = "12345\n====\n\n12345\n67890\n\n123\n---\n\n- 1\n- 2\n- 3\n";
-	char *html = malloc(4062);
+	int i = 0, a = argc;
+	for (; a > 1; --a) {
+		if (argv[a] == NULL)
+			continue;
+		if (argv[a][i] == '-') {
+			if (strcmp(argv[a], "-h") == 0 ||
+				strcmp(argv[a], "--help") == 0) {
+				help();
+				a = 0;
+			}
+			if (strcmp(argv[a], "-br") == 0 ||
+				strcmp(argv[a], "-break") == 0)
+				opts |= OPT_HB;
+			argv[a][0] = '\0';
+		}
+	}
 
-	struct node *n = txt2html(text);
-	while(n != NULL) {
-		if (n->buf != NULL)
+
+	char c;
+	for (a = 1, c = EOF; a < argc; ++a) {
+		FILE *f = fopen(argv[a], "r");
+		struct node *html = NULL, *n = NULL;
+		do {
+			verbose("reading...\r");
+			char buf[BUFSIZ] = {'\0'};
+			fread(buf, BUFSIZ-1, sizeof(char), f);
+			n = txt2html(buf, n);
+			c = fgetc(f);
+			if (c != EOF)
+				if (ungetc(c, f) == EOF) perror("txt2html: ungetc() fail");
+		} while (c != EOF);
+		do {
+			if (n->next == NULL) break;
+			n = n->next;
 			printf("%s", n->buf);
-			//printf("%02x='%s'\n", n->type, n->buf);
-		n = n->next;
+		} while (n->buf != NULL);
+		fclose(f);
 	}
 
 	return EXIT_SUCCESS;
 }
 
-struct node *txt2html(char *txt)
+struct node *txt2html(char *txt, struct node *n)
 {
-	struct node *n = malloc(ASTLIMIT * sizeof(struct node));
+	int cont = 0;
+	if (n == NULL)
+		n = malloc(ASTLIMIT * sizeof(struct node));
+	else cont = 1;
 	const size_t len = strlen(txt);
 
 	unsigned int i = 0;
@@ -176,8 +217,12 @@ EXIT:
 		}
 	}
 
-	while (n->prev != NULL)
-		n = n->prev;
+	if ((n->type & CLOSE) == 1)
+		n = NULL;
+	else
+		closenode(n);
+		while (n->prev != NULL) n = n->prev;
+	
 	return n;
 }
 
