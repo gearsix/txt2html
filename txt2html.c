@@ -3,12 +3,12 @@
 #include <string.h>
 #include <stdint.h>
 #include <ctype.h> // replace with utf8 support
+#include <assert.h>
 
 #define ASTLIMIT 10000
 
-// options within <p>
 #define OPT_V  0x10 // print verbose logs
-#define OPT_BR 0x01 // newlines as <br/> nodes
+#define OPT_BR 0x01 // newlines as <br/> nodes within <p> (not ' ')
 
 // node tags
 #define OPEN      0x10
@@ -70,9 +70,11 @@ int main(int argc, char **argv)
 
 
 	char c;
+	struct node *ast = calloc(ASTLIMIT, sizeof(struct node));
 	for (a = 1, c = EOF; a < argc; ++a) {
 		FILE *f = fopen(argv[a], "r");
-		struct node *n = NULL;
+		
+		struct node *n = ast;
 		do {
 			verbose("reading...\r");
 			char buf[BUFSIZ] = {'\0'};
@@ -82,22 +84,28 @@ int main(int argc, char **argv)
 			if (c != EOF && ungetc(c, f) == EOF)
 				perror("txt2html: ungetc() fail");
 		} while (c != EOF);
-		while (n->next != NULL) {
+		
+		n = ast;
+		while (n != NULL) {
+			if (n->buf != NULL) {
+				printf("%s", n->buf);
+				if (n->buf[strlen(n->buf)+1] == '&')
+					free(n->buf);
+			}
 			n = n->next;
-			if (n->buf != NULL) printf("%s", n->buf);
 		}
 		fclose(f);
 	}
+	free(ast);
 
 	return EXIT_SUCCESS;
 }
 
 struct node *txt2html(char *txt, struct node *n)
 {
+	assert(n != NULL);
 	if (txt == NULL || txt[0] == EOF)
 		goto EXIT;
-	if (n == NULL)
-		n = malloc(ASTLIMIT * sizeof(struct node));
 	const size_t len = strlen(txt);
 
 	unsigned int i = 0;
@@ -219,38 +227,35 @@ EXIT:
 		}
 	}
 
-	while (n != NULL && n->prev != NULL) n = n->prev;
-	
 	return n;
 }
 
 struct node *closenode(struct node *n)
 {
-	if (n != NULL) {
-		switch (n->type) {
-			case UL+OPEN+LI:
-			case UL+LI:
-				n = newnode(n, n+1, CLOSE+UL+LI);
-				break;
-			case OPEN+UL:
-			case CLOSE+UL+LI:
-				n = newnode(n, n+1, CLOSE+UL);
-				break;
-			case OL+OPEN+LI:
-			case OL+LI:
-				n = newnode(n, n+1, CLOSE+OL+LI);
-				break;
-			case OPEN+OL:
-			case CLOSE+OL+LI:
-				n = newnode(n, n+1, CLOSE+OL);
-				break;
-			case OPEN+P:
-			case P:
-				n = newnode(n, n+1, CLOSE+P);
-				break;
-			default:
-				break;
-		}
+	assert(n != NULL);
+	switch (n->type) {
+		case UL+OPEN+LI:
+		case UL+LI:
+			n = newnode(n, n+1, CLOSE+UL+LI);
+			break;
+		case OPEN+UL:
+		case CLOSE+UL+LI:
+			n = newnode(n, n+1, CLOSE+UL);
+			break;
+		case OL+OPEN+LI:
+		case OL+LI:
+			n = newnode(n, n+1, CLOSE+OL+LI);
+			break;
+		case OPEN+OL:
+		case CLOSE+OL+LI:
+			n = newnode(n, n+1, CLOSE+OL);
+			break;
+		case OPEN+P:
+		case P:
+			n = newnode(n, n+1, CLOSE+P);
+			break;
+		default:
+			break;
 	}
 	return n;
 }
@@ -259,10 +264,8 @@ struct node *closenode(struct node *n)
 // a pointer to `n` is returned.
 struct node *newnode(struct node *prev, struct node *next, uint8_t tag)
 {
-	if (next == NULL)
-		perror("newnode, next cannot be NULL");
-	if (prev != NULL)
-		prev->next = next;
+	assert(next != NULL && prev != NULL);
+	prev->next = next;
 	next->prev = prev;
 	next->type = tag;
 	switch(tag) {
@@ -328,22 +331,26 @@ struct node *newnode(struct node *prev, struct node *next, uint8_t tag)
 // `n->buf` will only be allocated used memory.
 void writebuf(struct node *n, int c)
 {
-	static int pag = 0;
+	assert(n != NULL);
+	static int pg = 0;
 	static int len = 0;
-	static char buf[BUFSIZ];
+	static char buf[BUFSIZ+1];
 
-	if (len+1 == BUFSIZ || c == EOF) {
-		buf[len++] = '\0';
-		n->buf = (pag == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
+	if (len+2 == BUFSIZ || c == EOF) {
+		if (c == EOF) {
+			buf[len++] = '\0';
+			buf[len++] = '&'; // signal malloc
+		}
+		n->buf = (pg == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
 		memmove(n->buf, buf, len);
-		++pag;
+		++pg;
 		len = 0;
 		memset(buf, '\0', BUFSIZ); 
 	}
 
 	switch (c) {
 		case EOF:
-			pag = 0;
+			pg = 0;
 			break;
 		case '\t':
 			strncat(buf, "&emsp;", 7);
