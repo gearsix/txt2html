@@ -44,7 +44,7 @@ void help()
 	puts("");
 	puts("Convert content in txt files to html.");
 	puts("");
-	puts("FILE...   A list of 1 filepaths that point to files to be converted to HTML");
+	puts("FILE...   A list of filepaths that point to files to be converted to HTML");
 	puts("");
 	puts("OPTIONS");
 	puts("-br           Treat newlines within paragraphs as line breaks.");
