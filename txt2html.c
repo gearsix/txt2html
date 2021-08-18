@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <stdarg.h>
 #include <stdint.h>
+#include <string.h>
 #include <ctype.h> // replace with utf8 support
 #include <assert.h>
 
@@ -39,25 +40,40 @@ uint8_t opts = 0;
 
 void help()
 {
-
+	puts("usage: txt2html [OPTIONS] FILE...");
+	puts("");
+	puts("Convert content in txt files to html.");
+	puts("");
+	puts("FILE...   A list of 1 filepaths that point to files to be converted to HTML");
+	puts("");
+	puts("OPTIONS");
+	puts("-br           Treat newlines within paragraphs as line breaks.");
+	puts("-v            Print verbose logs during runtime");
+	puts("-h, --help    Print this message");
 }
 
-void verbose(const char *log)
+void verbose(const char *fmt, ...)
 {
-	if (opts & OPT_V) printf("txt2html: %s", log);
+	if (opts & OPT_V) {
+		printf("txt2html: ");
+		va_list args;
+		va_start(args, fmt);
+		vprintf(fmt, args);
+		va_end(args);
+	}
 }
 
 int main(int argc, char **argv)
 {
-	int i = 0, a = argc;
-	for (; a > 1; --a) {
+	int i = 0, a = argc-1;
+	for (; a > 0; --a) {
 		if (argv[a] == NULL)
 			continue;
 		if (argv[a][i] == '-') {
 			if (strcmp(argv[a], "-h") == 0 ||
 				strcmp(argv[a], "--help") == 0) {
 				help();
-				a = 0;
+				exit(0);
 			} else if (strcmp(argv[a], "-br") == 0) {
 				opts |= OPT_BR;
 			} else if (strcmp(argv[a], "-v") == 0) {
@@ -67,17 +83,22 @@ int main(int argc, char **argv)
 			argv[a][0] = '\0';
 		}
 	}
-
+	
+	verbose("printing verbose logs\n");
 
 	char c;
 	struct node *ast = calloc(ASTLIMIT, sizeof(struct node));
 	for (a = 1, c = EOF; a < argc; ++a) {
+		if (strlen(argv[a]) == 0)
+			continue;
+
+		verbose("opening %s\n", argv[a]);
 		FILE *f = fopen(argv[a], "r");
 		
 		struct node *n = ast;
 		do {
-			verbose("reading...\r");
 			char buf[BUFSIZ] = {'\0'};
+			verbose("reading block...\r");
 			fread(buf, BUFSIZ-1, sizeof(char), f);
 			n = txt2html(buf, n);
 			c = fgetc(f);
@@ -86,6 +107,7 @@ int main(int argc, char **argv)
 		} while (c != EOF);
 		
 		n = ast;
+		int ncount = 0;
 		while (n != NULL) {
 			if (n->buf != NULL) {
 				printf("%s", n->buf);
@@ -93,7 +115,10 @@ int main(int argc, char **argv)
 					free(n->buf);
 			}
 			n = n->next;
+			++ncount;
 		}
+		verbose("counted %d nodes\n", ncount);
+		verbose("closing %s\n", argv[a]);
 		fclose(f);
 	}
 	free(ast);
