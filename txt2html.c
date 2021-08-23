@@ -6,7 +6,7 @@
 #include <ctype.h> // replace with utf8 support
 #include <assert.h>
 
-#define ASTLIMIT 10000
+#define ASTLIMIT 1000000
 
 #define OPT_V  0x10 // print verbose logs
 #define OPT_BR 0x01 // newlines as <br/> nodes within <p> (not ' ')
@@ -29,6 +29,8 @@ struct node {
 	char *buf;
 };
 
+struct node *parsef(FILE **f, struct node *ast);
+int readast(struct node *ast);
 int readp(struct node *n, char *txt, int txti);
 int isheading(char *txt, int txti);
 void writebuf(struct node *n, int c);
@@ -63,7 +65,7 @@ void verbose(const char *fmt, ...)
 	}
 }
 
-int main(int argc, char **argv)
+void parseargs(int argc, char **argv)
 {
 	int i = 0, a = argc-1;
 	for (; a > 0; --a) {
@@ -83,47 +85,74 @@ int main(int argc, char **argv)
 			argv[a][0] = '\0';
 		}
 	}
-	
+}
+
+int main(int argc, char **argv)
+{
+	parseargs(argc, argv);
 	verbose("printing verbose logs\n");
 
-	char c;
+	int a;
+	FILE *f;
 	struct node *ast = calloc(ASTLIMIT, sizeof(struct node));
-	for (a = 1, c = EOF; a < argc; ++a) {
+	for (a = 1; a < argc; ++a) {
 		if (strlen(argv[a]) == 0)
 			continue;
 
 		verbose("opening %s\n", argv[a]);
-		FILE *f = fopen(argv[a], "r");
-		
-		struct node *n = ast;
-		do {
-			char buf[BUFSIZ] = {'\0'};
-			verbose("reading block...\r");
-			fread(buf, BUFSIZ-1, sizeof(char), f);
-			n = txt2html(buf, n);
-			c = fgetc(f);
-			if (c != EOF && ungetc(c, f) == EOF)
-				perror("txt2html: ungetc() fail");
-		} while (c != EOF);
-		
-		n = ast;
-		int ncount = 0;
-		while (n != NULL) {
-			if (n->buf != NULL) {
-				printf("%s", n->buf);
-				if (n->buf[strlen(n->buf)+1] == '&')
-					free(n->buf);
-			}
-			n = n->next;
-			++ncount;
+		if ((f = fopen(argv[a], "r")) == NULL) {
+			perror("fopen failed, abort");
+			continue;
 		}
-		verbose("counted %d nodes\n", ncount);
+
+		ast = parsef(&f, ast);
+		int astsiz = readast(ast);
+
+		verbose("counted %d nodes\n", astsiz);
 		verbose("closing %s\n", argv[a]);
-		fclose(f);
+		if (fclose(f) == EOF) perror("fclose failed");
+	}
+	while (ast->prev != NULL) {
+		if (ast != NULL && ast->buf[strlen(ast->buf)+1] == '$')
+			free(ast->buf);
+		ast = ast->prev;
 	}
 	free(ast);
 
 	return EXIT_SUCCESS;
+}
+
+struct node *parsef(FILE **f, struct node *ast)
+{
+	char c;
+	do {
+		verbose("reading block...\r");
+
+		char buf[BUFSIZ] = {'\0'};
+		fread(buf, BUFSIZ-1, sizeof(char), *f);
+		ast = txt2html(buf, ast);
+
+		c = fgetc(*f);
+		if (c != EOF && ungetc(c, *f) == EOF)
+			perror("txt2html: ungetc() fail");	
+	} while (c != EOF);
+	return ast;
+}
+
+int readast(struct node *ast)
+{
+	assert(ast != NULL);
+	int cnt;
+	for (cnt = 0; ast->prev != NULL; ast = ast->prev, ++cnt);
+	while (ast != NULL) {
+		if (ast->buf != NULL)
+			printf("%s", ast->buf);
+		if (ast->next != NULL)
+			ast = ast->next;
+		else
+			break;
+	}
+	return cnt;
 }
 
 struct node *txt2html(char *txt, struct node *n)
@@ -364,7 +393,7 @@ void writebuf(struct node *n, int c)
 	if (len+2 == BUFSIZ || c == EOF) {
 		if (c == EOF) {
 			buf[len++] = '\0';
-			buf[len++] = '&'; // signal malloc
+			buf[len++] = '$';
 		}
 		n->buf = (pg == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
 		memmove(n->buf, buf, len);
