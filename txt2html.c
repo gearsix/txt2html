@@ -6,7 +6,7 @@
 #include <ctype.h> // replace with utf8 support
 #include <assert.h>
 
-#define ASTLIMIT 1000000
+#define ASTLIMIT 1000
 
 #define OPT_V  0x10 // print verbose logs
 #define OPT_BR 0x01 // newlines as <br/> nodes within <p> (not ' ')
@@ -160,8 +160,8 @@ struct node *txt2html(char *txt, struct node *n)
 	assert(n != NULL);
 	if (txt == NULL || txt[0] == EOF)
 		goto EXIT;
-	const size_t len = strlen(txt);
 
+	const size_t len = strlen(txt);
 	unsigned int i = 0;
 	while (i != EOF) {
 		while (txt[i] == '\n') ++i;
@@ -319,6 +319,10 @@ struct node *closenode(struct node *n)
 struct node *newnode(struct node *prev, struct node *next, uint8_t tag)
 {
 	assert(next != NULL && prev != NULL);
+
+	static size_t ncnt = 0;
+	assert(ncnt++ < ASTLIMIT);
+
 	prev->next = next;
 	next->prev = prev;
 	next->type = tag;
@@ -390,7 +394,7 @@ void writebuf(struct node *n, int c)
 	static int len = 0;
 	static char buf[BUFSIZ+1];
 
-	if (len+2 == BUFSIZ || c == EOF) {
+	if (len+2 == BUFSIZ || c == EOF && len > 0) {
 		if (c == EOF) {
 			buf[len++] = '\0';
 			buf[len++] = '$';
