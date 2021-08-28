@@ -6,9 +6,10 @@
 #include <ctype.h> // replace with utf8 support
 #include <assert.h>
 
-#define ASTLIMIT 1000
+#define MEMLIMIT 100000000
 
 #define OPT_V  0x10 // print verbose logs
+#define OPT_NM 0x20 // no memory limit
 #define OPT_BR 0x01 // newlines as <br/> nodes within <p> (not ' ')
 
 // node tags
@@ -23,20 +24,36 @@
 #define OL        0x04
 #define UL        0x08
 
+// rules for detecting tags
+#define RULE_CLOSE_OL(str) (*str == '\n' && (*(str+1) == '\n' || *(str+1) == '\0'))
+#define LEN_CLOSE_OL       2
+#define RULE_OPEN_OLI(str) (isalnum(*str) && *(str+1) == '.' && *(str+2) == ' ')
+#define LEN_OPEN_OLI       3
+#define RULE_CLOSE_UL(str) (*str == '\n' && (*(str+1) == '\n' || *(str+1) == '\0'))
+#define LEN_CLOSE_UL       2
+#define RULE_OPEN_ULI(str) ((*str == '-' || *str == '*') && *(str+1) == ' ')
+#define LEN_OPEN_ULI       2
+#define RULE_OPEN_PRE(str) (*str == '\t' && isprint(*(str+1)))
+#define LEN_OPEN_PRE       1
+
 struct node {
 	struct node *prev, *next;
 	uint8_t type;
 	char *buf;
 };
 
-struct node *parsef(FILE **f, struct node *ast);
+struct node *parsef(FILE **f);
 int readast(struct node *ast);
-int readp(struct node *n, char *txt, int txti);
-int isheading(char *txt);
+struct node *buf2ast(const char *buf, struct node *ast);
+struct node *newnode(struct node *prev, const int type);
+size_t nextnode(const char *str, struct node **n);
+size_t parseh(const char *str, struct node **n);
+size_t parseoli(const char *str, struct node **n);
+size_t parseuli(const char *str, struct node **n);
+size_t parsep(const char *str, struct node **n);
+size_t parsetxt(const char *str, struct node **n);
 void writebuf(struct node *n, int c);
-struct node *buf2ast(char *txt, struct node *n);
-struct node *newnode(struct node *prev, struct node *next, uint8_t tag);
-struct node *closenode(struct node *n);
+int isheading(const char *txt);
 
 uint8_t opts = 0;
 
@@ -80,6 +97,8 @@ void parseargs(int argc, char **argv)
 				opts |= OPT_BR;
 			} else if (strcmp(argv[a], "-v") == 0) {
 				opts |= OPT_V;
+			} else if (strcmp(argv[a], "-nm") == 0) {
+				opts |= OPT_NM;
 			}
 			
 			argv[a][0] = '\0';
@@ -94,7 +113,7 @@ int main(int argc, char **argv)
 
 	int a;
 	FILE *f;
-	struct node *ast = calloc(ASTLIMIT, sizeof(struct node));
+	struct node *ast;
 	for (a = 1; a < argc; ++a) {
 		if (strlen(argv[a]) == 0)
 			continue;
@@ -105,24 +124,29 @@ int main(int argc, char **argv)
 			continue;
 		}
 
-		parsef(&f, ast);
+		ast = parsef(&f);
 		verbose("counted %d nodes\n", readast(ast));
 		verbose("closing %s\n", argv[a]);
 		if (fclose(f) == EOF) perror("fclose failed");
+
+		while (ast != NULL) {
+			if (ast->buf != NULL && ast->buf[strlen(ast->buf)+1] == '$')
+				free(ast->buf);
+			if (ast->next != NULL)
+				free(ast->next);
+			ast = ast->prev;
+		}
+		free(ast);
+		newnode(NULL, 0); // reset node count
 	}
-	while (ast->prev != NULL) {
-		if (ast != NULL && ast->buf[strlen(ast->buf)+1] == '$')
-			free(ast->buf);
-		ast = ast->prev;
-	}
-	free(ast);
 
 	return EXIT_SUCCESS;
 }
 
-struct node *parsef(FILE **f, struct node *ast)
+struct node *parsef(FILE **f)
 {
 	char c;
+	struct node *ast = NULL;
 	do {
 		verbose("reading block...\r");
 		char buf[BUFSIZ] = {'\0'};
@@ -134,13 +158,14 @@ struct node *parsef(FILE **f, struct node *ast)
 			perror("txt2html: ungetc() fail");	
 		verbose("                \r");
 	} while (c != EOF);
+	buf2ast(NULL, ast);
 	return ast;
 }
 
 int readast(struct node *ast)
 {
 	assert(ast != NULL);
-	for (;ast->prev != NULL; ast = ast->prev); // rewind
+	while (ast->prev != NULL) ast = ast->prev; // rewind
 	int cnt = 0;
 	while (ast != NULL) {
 		if (ast->buf != NULL)
@@ -151,237 +176,215 @@ int readast(struct node *ast)
 	return cnt;
 }
 
-struct node *buf2ast(char *buf, struct node *ast)
+struct node *buf2ast(const char *buf, struct node *ast)
 {
-	assert(buf != NULL && ast != NULL);
+	struct node *n = ast;
+	size_t i = 0;
+	size_t len = (buf != NULL) ? strlen(buf) : 0;
 
-	const size_t len = strlen(buf);
-	int i = 0;
-	while (i != EOF) {
+	if (buf == NULL && ast != NULL)
+		n = newnode(n, CLOSE+n->prev->type);
+
+	while (i < len && buf != NULL) {
 		while (buf[i] == '\n') ++i;
-
-		switch (ast->type) {
-			case UL+OPEN+LI:
-				ast = newnode(ast, ast+1, UL+LI);
-			case UL+LI:
-				while (i <= len && isprint(buf[i]))
-					writebuf(ast, buf[i++]);
-				if (buf[i] == '\n' && (buf[i+1] == '\n' || buf[i+1] == '\0')) {
-					++i;
-					ast = closenode(ast);
-					ast = newnode(ast, ast+1, CLOSE+UL);
-					//if (buf[i+1] == '\0') goto EXIT;
-				} else if (buf[i] == '\n' && (buf[i+1] == '-' || buf[i+1] == '*') && buf[i+2] == ' ') {
-					i += 2;
-					ast = closenode(ast);
-					ast = newnode(ast, ast+1, UL+OPEN+LI);
-					ast = newnode(ast, ast+1, UL+LI);
-				} else if (buf[i] == '\n' && (opts & OPT_BR)) {
-					ast = newnode(ast, ast+1, OPEN+BR+CLOSE);
-					ast = newnode(ast, ast+1, UL+OPEN+LI);
-				} else if (buf[i] == '\n') {
-					writebuf(ast, ' ');
-				} else {
-					writebuf(ast, buf[i]);
-				}
-				++i;
-				break;
-			case OL+OPEN+LI:
-				ast = newnode(ast, ast+1, OL+LI);
-			case OL+LI:
-				while (i <= len && isprint(buf[i]))
-					writebuf(ast, buf[i++]);
-				if (buf[i] == '\n' && (buf[i+1] == '\n' || buf[i+1] == '\0')) {
-					++i;
-					ast = closenode(ast);
-					ast = newnode(ast, ast+1, CLOSE+OL);
-					if (buf[i+1] == '\0') goto EXIT;
-				} else if (buf[i] == '\n' && (isalnum(buf[i+1]) && buf[i+2] == '.')) {
-					i += 2;
-					ast = closenode(ast);
-					ast = newnode(ast, ast+1, OL+OPEN+LI);
-					ast = newnode(ast, ast+1, OL+LI);
-				} else if (buf[i] == '\n' && (opts & OPT_BR)) {
-					ast = newnode(ast, ast+1, OPEN+BR+CLOSE);
-					ast = newnode(ast, ast+1, OL+LI);
-				} else if (buf[i] == '\n') {
-					writebuf(ast, ' ');
-				} else {
-					writebuf(ast, buf[i]);
-				}
-				++i;
-				break;
+		if (n == NULL)
+			i += nextnode(&buf[i], &n);
+		switch (n->type) {
 			case H1:
-			case H2:
-				while (buf[i] != '\n')
-					writebuf(ast, buf[i++]);
-				do { ++i; } while (buf[i] == '-' || buf[i] == '=');
-				ast = newnode(ast, ast+1, CLOSE+ast->type);
-				break;
-			case P:
-				while (i <= len && isprint(buf[i]))
-					writebuf(ast, buf[i++]);
-				if (buf[i] == '\n' && buf[i+1] == '\n') {
-					++i;
-					ast = closenode(ast);
-				} else if (buf[i] == '\n' && (opts & OPT_BR)) {
-					ast = newnode(ast, ast+1, OPEN+BR+CLOSE);
-					ast = newnode(ast, ast+1, P);
-				} else if (buf[i] == '\n') {
-					writebuf(ast, ' ');
-				} else {
-					writebuf(ast, buf[i]);
-				}
-				++i;
-				break;
-			default:
-				if (isalnum(buf[i]) && buf[i+1] == '.') {
-					ast = newnode(ast, ast+1, OPEN+OL);
-					ast = newnode(ast, ast+1, OL+OPEN+LI);
-					i += 3;
-				} else if ((buf[i] == '*' || buf[i] == '-') && buf[i+1] == ' ') {
-					ast = newnode(ast, ast+1, OPEN+UL);
-					ast = newnode(ast, ast+1, UL+OPEN+LI);
-					i += 2;
-				} else if (buf[i] == '\t' && isprint(buf[i+1])) {
-					ast = newnode(ast, ast+1, OPEN+PRE);
-					ast = newnode(ast, ast+1, PRE);
-					++i;
-				} else if (isprint(buf[i])) {
-					switch (isheading(&buf[i])) {
-						case H1:
-							ast = newnode(ast, ast+1, OPEN+H1);
-							ast = newnode(ast, ast+1, H1);
-							break;
-						case H2:
-							ast = newnode(ast, ast+1, OPEN+H2);
-							ast = newnode(ast, ast+1, H2);
-							break;
-						case 0:
-						default:
-							ast = newnode(ast, ast+1, OPEN+P);
-							ast = newnode(ast, ast+1, P);
-							break;
-					}
-					writebuf(ast, buf[i++]);
-				}
-				break;
+			case H2:    i += parseh(&buf[i], &n);   break;
+			case P:     i += parsep(&buf[i], &n);   break;
+			//case PRE:   i += parsetxt(&buf[i], &n); break; // TODO
+			case OL+LI: i += parseoli(&buf[i], &n); break;
+			case UL+LI: i += parseuli(&buf[i], &n); break;
+			default:    i += nextnode(&buf[i], &n); break;
 		}
-
-		if (i >= len || buf[i] == '\0') {
-EXIT:
-			i = EOF;
-			ast = closenode(ast);
-			continue;
-		}
-	}
-
-	return ast;
-}
-
-struct node *closenode(struct node *n)
-{
-	assert(n != NULL);
-	switch (n->type) {
-		case UL+OPEN+LI:
-		case UL+LI:
-			n = newnode(n, n+1, CLOSE+UL+LI);
-			break;
-		case OPEN+UL:
-		case CLOSE+UL+LI:
-			n = newnode(n, n+1, CLOSE+UL);
-			break;
-		case OL+OPEN+LI:
-		case OL+LI:
-			n = newnode(n, n+1, CLOSE+OL+LI);
-			break;
-		case OPEN+OL:
-		case CLOSE+OL+LI:
-			n = newnode(n, n+1, CLOSE+OL);
-			break;
-		case OPEN+P:
-		case P:
-			n = newnode(n, n+1, CLOSE+P);
-			break;
-		default:
-			break;
 	}
 	return n;
 }
 
-// malloc node `n` and set it's values according to `tag`.
-// a pointer to `n` is returned.
-struct node *newnode(struct node *prev, struct node *next, uint8_t tag)
+struct node *newnode(struct node *prev, const int type)
 {
-	assert(next != NULL && prev != NULL);
+	static size_t cnt;
 
-	static size_t ncnt = 0;
-	assert(ncnt++ < ASTLIMIT);
+	if (prev == NULL && type == 0) {
+		cnt = 0;
+		return NULL;
+	}
 
-	prev->next = next;
-	next->prev = prev;
-	next->type = tag;
-	switch(tag) {
-		case OPEN+H1:
-			next->buf = "<h1>\0";
-			break;
-		case OPEN+H2:
-			next->buf = "<h2>\0";
-			break;
-		case OPEN+P:
-			next->buf = "<p>\0";
-			break;
-		case OPEN+OL:
-			next->buf = "<ol>\n\0";
-			break;
-		case OPEN+UL:
-			next->buf = "<ul>\n\0";
-			break;
+	if (!(opts & OPT_NM) && (sizeof(struct node) * cnt > MEMLIMIT)) {
+		printf("txt2html: reached memory limit\n");
+		abort();
+	}
+
+	struct node *n = malloc(sizeof(struct node));
+	n->type = type;
+
+	if (prev != NULL) {
+		n->prev = prev;
+		prev->next = n;
+		if (type & CLOSE) writebuf(prev, EOF);
+	}
+
+	switch(type) {
+		case OPEN+H1:       n->buf = "<h1>\0";   break;
+		case OPEN+H2:       n->buf = "<h2>\0";   break;
+		case OPEN+P:        n->buf = "<p>\0";    break;
+		case OPEN+OL:       n->buf = "<ol>\n\0"; break;
+		case OPEN+UL:       n->buf = "<ul>\n\0"; break;
 		case OL+OPEN+LI:
-		case UL+OPEN+LI:
-			next->buf = "  <li>\0";
-			break;
-		case CLOSE+H1:
-			if (prev != NULL && prev->type == H1)
-				writebuf(prev, EOF);
-			next->buf = "</h1>\n\0";
-			break;
-		case CLOSE+H2:
-			if (prev != NULL && prev->type == H2)
-				writebuf(prev, EOF);
-			next->buf = "</h2>\n\0";
-			break;
-		case CLOSE+P:
-			if (prev != NULL && prev->type == P)
-				writebuf(prev, EOF);
-			next->buf = "</p>\n\0";
-			break;
-		case CLOSE+OL:
-			next->buf = "</ol>\n\0";
-			break;
-		case CLOSE+UL:
-			next->buf = "</ul>\n\0";
-			break;
+		case UL+OPEN+LI:    n->buf = "  <li>\0"; break;
+		
+		case CLOSE+H1:      n->buf = "</h1>\n\0"; break;
+		case CLOSE+H2:      n->buf = "</h2>\n\0"; break;
+		case CLOSE+P:       n->buf = "</p>\n\0"; break;
+		case CLOSE+OL:      n->buf = "</ol>\n\0"; break;
+		case CLOSE+UL:      n->buf = "</ul>\n\0"; break;
 		case UL+CLOSE+LI:
-		case OL+CLOSE+LI:
-			if (prev != NULL && (prev->type & OPEN+LI) != 0)
-				writebuf(prev, EOF);
-			next->buf = "</li>\n\0";
-			break;
-		case OPEN+BR+CLOSE:
-			if (prev != NULL && prev->type == P)
-				writebuf(prev, EOF);
-			next->buf = "<br/>\n\0";
-			break;
+		case OL+CLOSE+LI:   n->buf = "</li>\n\0"; break;
+	
+		case OPEN+BR+CLOSE: n->buf = "<br/>\n\0"; break;
+		
 		default:
+			--cnt;
 			break;
 	}
-	return next;
+
+	++cnt;
+	return n;
+}
+
+size_t nextnode(const char *str, struct node **n)
+{
+	size_t ret = 0;
+	if (RULE_OPEN_OLI(&str[ret])) {
+		ret += LEN_OPEN_OLI;
+		*n = newnode(*n, OPEN+OL);
+		*n = newnode(*n, OPEN+OL+LI);
+		*n = newnode(*n, OL+LI);
+	} else if (RULE_OPEN_ULI(&str[ret])) {
+		ret += LEN_OPEN_ULI;
+		*n = newnode(*n, OPEN+UL);
+		*n = newnode(*n, OPEN+UL+LI);
+		*n = newnode(*n, UL+LI);
+	} else if (RULE_OPEN_PRE(&str[ret])) {
+		ret += LEN_OPEN_PRE;
+		*n = newnode(*n, OPEN+PRE);
+		*n = newnode(*n, PRE);
+	} else if (isprint(str[ret])) {
+		switch (isheading(&str[ret])) {
+			case H1:
+				*n = newnode(*n, OPEN+H1);
+				*n = newnode(*n, H1);
+				break;
+			case H2:
+				*n = newnode(*n, OPEN+H2);
+				*n = newnode(*n, H2);
+				break;
+			default:
+				*n = newnode(*n, OPEN+P);
+				*n = newnode(*n, P);
+				break;
+		}
+	}
+	return ret;
+}
+
+size_t parseh(const char *str, struct node **n)
+{
+	size_t ret = 0;
+	while(str[ret] != '\n' && str[ret] != '\0') writebuf(*n, str[ret++]);
+	do { ++ret; } while (str[ret] == '-' || str[ret] == '=');
+	*n = newnode(*n, CLOSE+(*n)->type);
+	return ret;
+}
+
+size_t parsep(const char *str, struct node **n)
+{
+	size_t i = parsetxt(str, n);
+	if (str[i] == '\n' && str[i+1] == '\n') *n = newnode(*n, CLOSE+P);
+	return i;
+}
+
+size_t parseoli(const char *str, struct node **n)
+{
+	size_t ret = 0;
+	size_t len = strlen(str);
+
+	while (ret < len) {
+		ret += parsetxt(&str[ret], n);
+		*n = newnode(*n, CLOSE+OL+LI);
+
+		if (str[ret] == '\0' || RULE_CLOSE_OL(&str[ret])) {
+			ret += LEN_CLOSE_OL;
+			*n = newnode(*n, CLOSE+OL);
+			break;
+		} else if (RULE_OPEN_OLI(&str[ret])) {
+			ret += LEN_OPEN_OLI;
+			*n = newnode(*n, OPEN+OL+LI);
+			*n = newnode(*n, OL+LI);
+		}
+	}
+
+	return ret;
+}
+
+size_t parseuli(const char *str, struct node **n)
+{
+	size_t ret = 0;
+	size_t len = strlen(str);
+
+	while (ret < len) {
+		ret += parsetxt(&str[ret], n);
+		*n = newnode(*n, CLOSE+UL+LI);
+
+		if (str[ret] == '\0' || RULE_CLOSE_UL(&str[ret])) {
+			ret += LEN_CLOSE_UL;
+			*n = newnode(*n, CLOSE+UL);
+			break;
+		} else if (RULE_OPEN_ULI(&str[ret])) {
+			ret += LEN_OPEN_ULI;
+			*n = newnode(*n, OPEN+UL+LI);
+			*n = newnode(*n, UL+LI);
+		} else break;
+	}
+
+	return ret;
+}
+
+size_t parsetxt(const char *str, struct node **n)
+{
+	size_t ret = 0;
+
+	while (str[ret] != '\0' && (isprint(str[ret]) || str[ret] == '\n')) {
+		if (str[ret] == '\n' && str[ret+1] == '\n')
+			break;
+		else if (str[ret] == '\n') {
+			if (((*n)->type & OL+LI && RULE_OPEN_OLI(&str[ret+1])) ||
+				((*n)->type & UL+LI && RULE_OPEN_ULI(&str[ret+1]))) {
+				++ret;
+				break;
+			}
+
+			if ((*n)->type == PRE && str[ret+1] == '\t') {
+				ret += 2;
+			} else if (opts & OPT_BR) {
+				*n = newnode(*n, OPEN+BR+CLOSE);
+				*n = newnode(*n, (*n)->prev->type);
+			} else {
+				writebuf(*n, ' ');
+			}
+		} else {
+			writebuf(*n, str[ret]);
+		}
+		++ret;
+	}
+
+	return ret;
 }
 
 // writebuf has an internal static buffer (`buf`) that it writes `c` to.
-// if `c=EOF` or `buf` reaches `BUFSIZ`, then `buf` it's written to n->buf.
-// `n->buf` will only be allocated used memory.
+// if `c == EOF` or `buf` reaches `BUFSIZ`, then `buf` it's written to n->buf.
+// `n->buf` will only be allocated required memory.
 void writebuf(struct node *n, int c)
 {
 	assert(n != NULL);
@@ -392,7 +395,7 @@ void writebuf(struct node *n, int c)
 	if (len+2 == BUFSIZ || c == EOF && len > 0) {
 		if (c == EOF) {
 			buf[len++] = '\0';
-			buf[len++] = '$';
+			buf[len++] = '$'; // signal malloc'd (not assigned)
 		}
 		n->buf = (pg == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
 		memmove(n->buf, buf, len);
@@ -416,11 +419,11 @@ void writebuf(struct node *n, int c)
 	}
 }
 
-int isheading(char *txt)
+int isheading(const char *txt)
 {
 	assert(txt != NULL);
 	while (*txt++ != '\n' && *txt != '\0'); // skip to next line
-	if (strlen(txt) < 3 || *txt == '\0')
+	if (*txt == '\0' || strlen(txt) < 3)
 		return 0;
 	if (*txt == '=' && *(txt+1) == '=' && *(txt+2) == '=')
 		return H1;
@@ -429,4 +432,3 @@ int isheading(char *txt)
 	else
 		return 0;
 }
-

@@ -7,6 +7,7 @@ functionality
 [*] implement li
 [*] implement h1
 [*] implement h2
+[ ] implement pre
 [ ] add utf-8 support (possibly more)
 [ ] rename to naml (not another markup language) if it goes beyond txt and/or markdown syntax
 
@@ -22,5 +23,5 @@ optimisations
 -------------
 
 [*] avoid recursion (unless needed)
-[ ] remove ASTLIMIT(?)
-[ ] allow writebuf() to take more than 1 char at a time, make less calls
+[*] remove ASTLIMIT(?)
+[?] allow writebuf() to take more than 1 char at a time, make less calls
