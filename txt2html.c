@@ -130,13 +130,16 @@ int main(int argc, char **argv)
 		if (fclose(f) == EOF) perror("fclose failed");
 
 		while (ast != NULL) {
-			if (ast->buf != NULL && ast->buf[strlen(ast->buf)+1] == '$')
+			if (ast->buf && ast->buf[strlen(ast->buf)+1] == '$')
 				free(ast->buf);
-			if (ast->next != NULL)
-				free(ast->next);
-			ast = ast->prev;
+			if (ast->next) free(ast->next);
+			if (ast->prev) {
+				ast = ast->prev;
+			} else {
+				free(ast);
+				break;
+			}
 		}
-		free(ast);
 		newnode(NULL, 0); // reset node count
 	}
 
@@ -164,7 +167,6 @@ struct node *parsef(FILE **f)
 
 int readast(struct node *ast)
 {
-	assert(ast != NULL);
 	while (ast->prev != NULL) ast = ast->prev; // rewind
 	int cnt = 0;
 	while (ast != NULL) {
@@ -216,7 +218,7 @@ struct node *newnode(struct node *prev, const int type)
 		abort();
 	}
 
-	struct node *n = malloc(sizeof(struct node));
+	struct node *n = calloc(1, sizeof(struct node));
 	n->type = type;
 
 	if (prev != NULL) {
@@ -371,7 +373,7 @@ size_t parsetxt(const char *str, struct node **n)
 				*n = newnode(*n, OPEN+BR+CLOSE);
 				*n = newnode(*n, (*n)->prev->type);
 			} else {
-				writebuf(*n, ' ');
+				writebuf(*n, str[ret]);
 			}
 		} else {
 			writebuf(*n, str[ret]);
