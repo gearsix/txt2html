@@ -183,7 +183,7 @@ struct node *buf2ast(const char *buf, struct node *ast)
 	size_t len = (buf != NULL) ? strlen(buf) : 0;
 
 	if (buf == NULL && ast != NULL)
-		n = newnode(n, CLOSE+n->prev->type);
+		n = newnode(n, CLOSE+n->type);
 
 	while (i < len && buf != NULL) {
 		while (buf[i] == '\n') ++i;
