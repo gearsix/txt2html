@@ -148,19 +148,15 @@ int main(int argc, char **argv)
 
 struct node *parsef(FILE **f)
 {
-	char c;
+	int n;
 	struct node *ast = NULL;
 	do {
 		verbose("reading block...\r");
 		char buf[BUFSIZ] = {'\0'};
-		fread(buf, BUFSIZ-1, sizeof(char), *f);
+		n = fread(buf, BUFSIZ-1, sizeof(char), *f);
 		ast = buf2ast(buf, ast);
-
-		c = fgetc(*f);
-		if (c != EOF && ungetc(c, *f) == EOF)
-			perror("txt2html: ungetc() fail");	
 		verbose("                \r");
-	} while (c != EOF);
+	} while (n > 0);
 	buf2ast(NULL, ast);
 	return ast;
 }
