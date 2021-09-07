@@ -21,7 +21,7 @@
 #define PRE       0x04
 #define LI        0x05
 #define BR        0x06
-#define OL        0x04
+#define OL        0x07
 #define UL        0x08
 
 // rules for detecting tags
@@ -191,7 +191,7 @@ struct node *buf2ast(const char *buf, struct node *ast)
 			case H1:
 			case H2:    i += parseh(&buf[i], &n);   break;
 			case P:     i += parsep(&buf[i], &n);   break;
-			//case PRE:   i += parsetxt(&buf[i], &n); break; // TODO
+			case PRE:   i += parsetxt(&buf[i], &n); break;
 			case OL+LI: i += parseoli(&buf[i], &n); break;
 			case UL+LI: i += parseuli(&buf[i], &n); break;
 			default:    i += nextnode(&buf[i], &n); break;
@@ -226,17 +226,19 @@ struct node *newnode(struct node *prev, const int type)
 	switch(type) {
 		case OPEN+H1:       n->buf = "<h1>\0";   break;
 		case OPEN+H2:       n->buf = "<h2>\0";   break;
+		case OPEN+PRE:      n->buf = "<pre>\0";  break;
 		case OPEN+P:        n->buf = "<p>\0";    break;
 		case OPEN+OL:       n->buf = "<ol>\n\0"; break;
 		case OPEN+UL:       n->buf = "<ul>\n\0"; break;
 		case OL+OPEN+LI:
 		case UL+OPEN+LI:    n->buf = "  <li>\0"; break;
 		
-		case CLOSE+H1:      n->buf = "</h1>\n\0"; break;
-		case CLOSE+H2:      n->buf = "</h2>\n\0"; break;
-		case CLOSE+P:       n->buf = "</p>\n\0"; break;
-		case CLOSE+OL:      n->buf = "</ol>\n\0"; break;
-		case CLOSE+UL:      n->buf = "</ul>\n\0"; break;
+		case CLOSE+H1:      n->buf = "</h1>\n\0";  break;
+		case CLOSE+H2:      n->buf = "</h2>\n\0";  break;
+		case CLOSE+PRE:     n->buf = "</pre>\n\0"; break;
+		case CLOSE+P:       n->buf = "</p>\n\0";   break;
+		case CLOSE+OL:      n->buf = "</ol>\n\0";  break;
+		case CLOSE+UL:      n->buf = "</ul>\n\0";  break;
 		case UL+CLOSE+LI:
 		case OL+CLOSE+LI:   n->buf = "</li>\n\0"; break;
 	
@@ -364,7 +366,10 @@ size_t parsetxt(const char *str, struct node **n)
 			}
 
 			if ((*n)->type == PRE && str[ret+1] == '\t') {
-				ret += 2;
+				writebuf(*n, '\n');
+				++ret;
+			} else if ((*n)->type == PRE && str[ret+1] != '\t') {
+				break;
 			} else if (opts & OPT_BR) {
 				*n = newnode(*n, OPEN+BR+CLOSE);
 				*n = newnode(*n, (*n)->prev->type);
