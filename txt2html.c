@@ -1,40 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
-#include <stdint.h>
-#include <string.h>
-#include <ctype.h> // replace with utf8 support
-#include <assert.h>
+#include "txt2html.h"
 
 #define MEMLIMIT 100000000
 
 #define OPT_V  0x10 // print verbose logs
 #define OPT_NM 0x20 // no memory limit
 #define OPT_BR 0x01 // newlines as <br/> nodes within <p> (not ' ')
-
-// node tags
-#define OPEN      0x10
-#define CLOSE     0x20
-#define H1        0x01
-#define H2        0x02
-#define P         0x03
-#define PRE       0x04
-#define LI        0x05
-#define BR        0x06
-#define OL        0x07
-#define UL        0x08
-
-// rules for detecting tags
-#define RULE_CLOSE_OL(str) (*str == '\n' && (*(str+1) == '\n' || *(str+1) == '\0'))
-#define LEN_CLOSE_OL       2
-#define RULE_OPEN_OLI(str) (isalnum(*str) && *(str+1) == '.' && *(str+2) == ' ')
-#define LEN_OPEN_OLI       3
-#define RULE_CLOSE_UL(str) (*str == '\n' && (*(str+1) == '\n' || *(str+1) == '\0'))
-#define LEN_CLOSE_UL       2
-#define RULE_OPEN_ULI(str) ((*str == '-' || *str == '*') && *(str+1) == ' ')
-#define LEN_OPEN_ULI       2
-#define RULE_OPEN_PRE(str) (*str == '\t' && isprint(*(str+1)))
-#define LEN_OPEN_PRE       1
 
 struct node {
 	struct node *prev, *next;
@@ -256,18 +226,18 @@ struct node *newnode(struct node *prev, const int type)
 size_t nextnode(const char *str, struct node **n)
 {
 	size_t ret = 0;
-	if (RULE_OPEN_OLI(&str[ret])) {
-		ret += LEN_OPEN_OLI;
+	if (rule_match(&str[ret], OPEN+OL+LI)) {
+		ret += rule_len(OPEN+OL+LI);
 		*n = newnode(*n, OPEN+OL);
 		*n = newnode(*n, OPEN+OL+LI);
 		*n = newnode(*n, OL+LI);
-	} else if (RULE_OPEN_ULI(&str[ret])) {
-		ret += LEN_OPEN_ULI;
+	} else if (rule_match(&str[ret], OPEN+UL+LI)) {
+		ret += rule_len(OPEN+UL+LI);
 		*n = newnode(*n, OPEN+UL);
 		*n = newnode(*n, OPEN+UL+LI);
 		*n = newnode(*n, UL+LI);
-	} else if (RULE_OPEN_PRE(&str[ret])) {
-		ret += LEN_OPEN_PRE;
+	} else if (rule_match(&str[ret], OPEN+PRE)) {
+		ret += rule_len(OPEN+PRE);
 		*n = newnode(*n, OPEN+PRE);
 		*n = newnode(*n, PRE);
 	} else if (isprint(str[ret])) {
@@ -292,7 +262,8 @@ size_t nextnode(const char *str, struct node **n)
 size_t parseh(const char *str, struct node **n)
 {
 	size_t ret = 0;
-	while(str[ret] != '\n' && str[ret] != '\0') writebuf(*n, str[ret++]);
+	while(str[ret] != '\n' && str[ret] != '\0')
+		writebuf(*n, str[ret++]);
 	do { ++ret; } while (str[ret] == '-' || str[ret] == '=');
 	*n = newnode(*n, CLOSE+(*n)->type);
 	return ret;
@@ -301,7 +272,8 @@ size_t parseh(const char *str, struct node **n)
 size_t parsep(const char *str, struct node **n)
 {
 	size_t i = parsetxt(str, n);
-	if (str[i] == '\n' && str[i+1] == '\n') *n = newnode(*n, CLOSE+P);
+	if (str[i] == '\n' && str[i+1] == '\n')
+		*n = newnode(*n, CLOSE+P);
 	return i;
 }
 
@@ -314,12 +286,12 @@ size_t parseoli(const char *str, struct node **n)
 		ret += parsetxt(&str[ret], n);
 		*n = newnode(*n, CLOSE+OL+LI);
 
-		if (str[ret] == '\0' || RULE_CLOSE_OL(&str[ret])) {
-			ret += LEN_CLOSE_OL;
+		if (str[ret] == '\0' || rule_match(&str[ret], CLOSE+OL)) {
+			ret += rule_len(CLOSE+OL);
 			*n = newnode(*n, CLOSE+OL);
 			break;
-		} else if (RULE_OPEN_OLI(&str[ret])) {
-			ret += LEN_OPEN_OLI;
+		} else if (rule_match(&str[ret], OPEN+OL+LI)) {
+			ret += rule_len(OPEN+OL+LI);
 			*n = newnode(*n, OPEN+OL+LI);
 			*n = newnode(*n, OL+LI);
 		}
@@ -337,12 +309,12 @@ size_t parseuli(const char *str, struct node **n)
 		ret += parsetxt(&str[ret], n);
 		*n = newnode(*n, CLOSE+UL+LI);
 
-		if (str[ret] == '\0' || RULE_CLOSE_UL(&str[ret])) {
-			ret += LEN_CLOSE_UL;
+		if (str[ret] == '\0' || rule_match(&str[ret], CLOSE+UL)) {
+			ret += rule_len(CLOSE+UL);
 			*n = newnode(*n, CLOSE+UL);
 			break;
-		} else if (RULE_OPEN_ULI(&str[ret])) {
-			ret += LEN_OPEN_ULI;
+		} else if (rule_match(&str[ret], OPEN+UL+LI)) {
+			ret += rule_len(OPEN+UL+LI);
 			*n = newnode(*n, OPEN+UL+LI);
 			*n = newnode(*n, UL+LI);
 		} else break;
@@ -359,8 +331,8 @@ size_t parsetxt(const char *str, struct node **n)
 		if (str[ret] == '\n' && str[ret+1] == '\n')
 			break;
 		else if (str[ret] == '\n') {
-			if (((*n)->type & OL+LI && RULE_OPEN_OLI(&str[ret+1])) ||
-				((*n)->type & UL+LI && RULE_OPEN_ULI(&str[ret+1]))) {
+			if (((*n)->type & OL+LI && rule_match(&str[ret+1], OPEN+OL+LI)) ||
+				((*n)->type & UL+LI && rule_match(&str[ret+1], OPEN+UL+LI))) {
 				++ret;
 				break;
 			}
