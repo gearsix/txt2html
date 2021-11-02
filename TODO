@@ -7,9 +7,10 @@ functionality
 [*] implement li
 [*] implement h1
 [*] implement h2
-[ ] implement pre
+[~] implement pre
 [ ] add utf-8 support (possibly more)
-[ ] rename to naml (not another markup language) if it goes beyond txt and/or markdown syntax
+[x] rename to naml (not another markup language) if it goes beyond txt and/or markdown syntax
+[~] get it working with latest re-works
 
 tests
 -----
