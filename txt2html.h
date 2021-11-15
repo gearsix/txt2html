@@ -60,7 +60,7 @@ struct node *node_create(struct node *prev, NodeType t);
 // If `c == EOF` or `buf` reaches `BUFSIZ` or `n` does not match
 // `n` from the previous call, then `buf` is written to the previous
 // `n` and reset for a new set of data.
-void node_writec(struct node *n, int c);
+void node_writec(struct node **n, int c);
 
 // rule `str` against a set of rules and determine the next node type.
 // `n` will be updated to a newly created node of the determined type.
@@ -70,31 +70,31 @@ size_t node_next(const char *str, struct node **n);
   parse.c
 ---------*/
 // main parsing function
-struct node *parse_buf(const char *buf, struct node **out, uint8_t opts);
+struct node *parse_buf(const char *buf, struct node **n, uint8_t opts);
 
 // parse `str` into `n` until *\0* or *\n\n* is found.
 // If `opts & OPT_BR` then `\n` will be parsed as a `<br/>` node.
 // If `n->type` is *PRE*, then parsing will also stop after the first
 // `\n` that is not followed by a `\t`.
 // The number of parsed bytes is returned
-size_t parse_textblock(const char *str, struct node *n, bool softbreaks);
+size_t parse_textblock(const char *str, struct node **n, bool softbreaks);
 
 // parse a line of text from `str` into `n` and skip the line after
 // aslong as it contains *=* or *-*.
 // The number of parsed bytes is returned.
-size_t parse_heading(const char *str, struct node *n);
+size_t parse_heading(const char *str, struct node **n);
 
 // parse `str` into `n` for *OL+LI* until *CLOSE+OL*.
 // The number of parsed bytes is returned.
-size_t parse_oli(const char *str, struct node *n, uint8_t opts);
+size_t parse_oli(const char *str, struct node **n, uint8_t opts);
 
 // parse `str` into`n` until *\0* or *\n\n*. After this, assign
 // a new node to `n` of CLOSE+P.
 // The number of parsed bytes is returned.
-size_t parse_p(const char *str, struct node *n, uint8_t opts);
+size_t parse_p(const char *str, struct node **n, uint8_t opts);
 
 // parse `str` into `n` for *UL+LI* until *CLOSE+UL*.
 // The number of parsed bytes is returned.
-size_t parse_uli(const char *str, struct node *n, uint8_t opts);
+size_t parse_uli(const char *str, struct node **n, uint8_t opts);
 
 #endif

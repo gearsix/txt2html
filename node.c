@@ -4,8 +4,6 @@ struct node *node_create(struct node *prev, NodeType t)
 {
 	struct node *n = calloc(1, sizeof(struct node));
 
-	n->next = 0;
-	
 	if (prev) {
 		n->prev = prev;
 		prev->next = n;
@@ -16,22 +14,26 @@ struct node *node_create(struct node *prev, NodeType t)
 	if (t == OPEN+BR+CLOSE) {
 		n->buf = "<br/>\n\0";
 	} else if (t & OPEN) {
-		if      (t & H1)  n->buf = "<h1>\0";
-		else if (t & H2)  n->buf = "<h2>\0";
-		else if (t & PRE) n->buf = "<pre>\0";
-		else if (t & P)   n->buf = "<p>\0";
-		else if (t & LI)  n->buf = "<li>\0"; // must come before OL/UL
-		else if (t & OL)  n->buf = "<ol>\0";
-		else if (t & UL)  n->buf = "<ul>\0";
+		t &= 0x0F;
+		if      (t == H1)  n->buf = "<h1>\0";
+		else if (t == H2)  n->buf = "<h2>\0";
+		else if (t == PRE) n->buf = "<pre>\0";
+		else if (t == P)   n->buf = "<p>\0";
+		else if (t == OL)  n->buf = "<ol>\n\0";
+		else if (t == UL)  n->buf = "<ul>\n\0";
+		else if (t == OL+LI || t == UL+LI)
+			n->buf = "<li>\0";
 	} else if (t & CLOSE) {
-		node_writec(prev, EOF);
-		if      (t & H1)  n->buf = "</h1>\n\0";
-		else if (t & H2)  n->buf = "</h2>\n\0";
-		else if (t & PRE) n->buf = "</pre>\n\0";
-		else if (t & P)   n->buf = "</p>\n\0";
-		else if (t & LI)  n->buf = "</li>\n\0"; // must come before OL/UL
-		else if (t & OL)  n->buf = "</ol>\n\0";
-		else if (t & UL)  n->buf = "</ul>\n\0";
+		t &= 0x0F;
+		node_writec(&prev, EOF);
+		if      (t == H1)  n->buf = "</h1>\n\0";
+		else if (t == H2)  n->buf = "</h2>\n\0";
+		else if (t == PRE) n->buf = "</pre>\n\0";
+		else if (t == P)   n->buf = "</p>\n\0";
+		else if (t == OL)  n->buf = "</ol>\n\0";
+		else if (t == UL)  n->buf = "</ul>\n\0";
+		else if (t == UL+LI || t == OL+LI)
+			n->buf = "</li>\n\0";
 	}
 
 	return n;
@@ -40,28 +42,21 @@ struct node *node_create(struct node *prev, NodeType t)
 // writebuf has an internal static buffer (`buf`) that it writes `c` to.
 // if `c == EOF` or `buf` reaches `BUFSIZ`, then `buf` it's written to n->buf.
 // `n->buf` will only be allocated required memory.
-void node_writec(struct node *n, int c)
+void node_writec(struct node **n, int c)
 {
 	assert(n);
-
-	static struct node *last_n;
 
 	static int pg = 0;
 	static int len = 0;
 	static char buf[BUFSIZ+1];
 
-	if ((last_n && last_n != n) || len+2 == BUFSIZ || (c == EOF && len > 0)) {
+	if (len+2 == BUFSIZ || (c == EOF && len > 0)) {
 		if (c == EOF) {
 			buf[len++] = '\0';
 			buf[len++] = '$'; // signal malloc not assigned const
 		}
-		if (last_n != n) {
-			struct node *tmp = last_n;
-			last_n = n;
-			n = tmp;
-		}
-		n->buf = (pg == 0) ? malloc(len) : realloc(n->buf, strlen(n->buf) + len);
-		memmove(n->buf, buf, len);
+		(*n)->buf = (pg == 0) ? malloc(len) : realloc((*n)->buf, strlen((*n)->buf) + len);
+		memmove((*n)->buf, buf, len);
 		++pg;
 		len = 0;
 		memset(buf, '\0', BUFSIZ); 
@@ -80,8 +75,6 @@ void node_writec(struct node *n, int c)
 			len += 1;
 			break;
 	}
-
-	last_n = n;
 }
 
 size_t node_next(const char *str, struct node **n)

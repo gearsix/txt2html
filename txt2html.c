@@ -1,9 +1,9 @@
 #include "txt2html.h"
 
-struct node *parsef(FILE *f);
-int readq(struct node *queue);
+struct node *convf(FILE *f);
+int readn(struct node *n);
 
-uint8_t opts;
+static uint8_t opts; // make extern if passing it about becomes a pain
 
 void help()
 {
@@ -27,6 +27,7 @@ void verbose(const char *fmt, ...)
 		va_start(args, fmt);
 		vprintf(fmt, args);
 		va_end(args);
+		fflush(stdout);
 	}
 }
 
@@ -61,7 +62,7 @@ int main(int argc, char **argv)
 
 	int a;
 	FILE *f;
-	struct node *queue;
+	struct node *n;
 	for (a = 1; a < argc; ++a) {
 		if (strlen(argv[a]) == 0)
 			continue;
@@ -72,19 +73,19 @@ int main(int argc, char **argv)
 			continue;
 		}
 
-		queue = parsef(f);
-		verbose("counted %d nodes\n", readq(queue));
+		n = convf(f);
+		verbose("counted %d nodes\n", readn(n));
 		verbose("closing %s\n", argv[a]);
 		if (fclose(f) == EOF) perror("fclose failed");
 
-		while (!queue) {
-			if (queue->buf && queue->buf[strlen(queue->buf)+1] == '$')
-				free(queue->buf);
-			if (queue->next) free(queue->next);
-			if (queue->prev) {
-				queue = queue->prev;
+		while (!n) {
+			if (n->buf && n->buf[strlen(n->buf)+1] == '$')
+				free(n->buf);
+			if (n->next) free(n->next);
+			if (n->prev) {
+				n = n->prev;
 			} else {
-				free(queue);
+				free(n);
 				break;
 			}
 		}
@@ -94,30 +95,30 @@ int main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-struct node *parsef(FILE *f)
+struct node *convf(FILE *f)
 {
-	int n;
-	struct node *queue = 0;
-	do {
-		verbose("reading block...\r");
-		char buf[BUFSIZ] = {'\0'};
-		n = fread(buf, BUFSIZ-1, sizeof(char), f);
-		queue = parse_buf(buf, &queue, opts);
-		verbose("                \r");
-	} while (n > 0);
-	parse_buf(NULL, &queue, opts);
-	return queue;
+	int siz;
+	struct node *n = 0;
+	char buf[BUFSIZ] = {'\0'};
+	while (true) {
+		siz = fread(buf, sizeof(char), BUFSIZ-1, f);
+		if (siz == 0) break;
+		buf[siz+1] = '\0';
+		verbose("read %d bytes\n", siz);
+		n = parse_buf(buf, &n, opts);
+	}
+	n = parse_buf(NULL, &n, opts);
+	return n;
 }
 
-int readq(struct node *q)
+int readn(struct node *n)
 {
-	while (q->prev)
-		q = q->prev; // rewind
+	while (n->prev)
+		n = n->prev; // rewind
 	int cnt = 0;
-	while (q) {
-		if (q->buf != NULL)
-			printf("%s", q->buf);
-		q = q->next;
+	while (n) {
+		if (n->buf) printf("%s", n->buf);
+		n = n->next;
 		++cnt;
 	}
 	return cnt;

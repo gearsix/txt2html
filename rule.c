@@ -23,7 +23,7 @@ bool rule_match(const char *str, NodeType type)
 	if ((type & CLOSE) && strlen(str) >= 2)
 		return (str[0] == '\n' && str[1] == '\n');
 
-	bool match;
+	bool match = false;
 	switch (type) {
 		case H1:
 			match = (rule_match_heading(str) == H1);
@@ -57,9 +57,9 @@ NodeType rule_match_heading(const char *str)
 	NodeType heading = 0;
 	while (*str && *str++ != '\n'); // skip line
 	if (strlen(str) >= 3) {
-		if (*str == '=' && *str+1 == '=' && *str+2 == '=')
+		if (*str == '=' && *(str+1) == '=' && *(str+2) == '=')
 			heading = H1;
-		else if (*str == '-' && *str+1 == '-' && *str+2 == '-')
+		else if (*str == '-' && *(str+1) == '-' && *(str+2) == '-')
 			heading = H2;
 	}
 	return heading;	
